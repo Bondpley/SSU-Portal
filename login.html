@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Вхід - СБУ Херсон</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+<script src="theme.js"></script>
+<link rel="icon" href="https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6e/Security_Service_of_Ukraine_Emblem.svg/1280px-Security_Service_of_Ukraine_Emblem.svg.png?utm_source=en.wikipedia.org&utm_campaign=index&utm_content=thumbnail">
+</head>
+<body class="login-page">
+
+<form id="loginForm" class="login-box">
+  <div class="app-brand">
+    <img src="https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6e/Security_Service_of_Ukraine_Emblem.svg/1280px-Security_Service_of_Ukraine_Emblem.svg.png?utm_source=en.wikipedia.org&utm_campaign=index&utm_content=thumbnail" alt="СБУ" class="brand-logo" width="38" height="38" >
+    <div>
+      <div class="brand-title">Управління СБУ в Херсонській області</div>
+    </div>
+  </div>
+  <br>
+
+  <h1>Вхід працівника</h1>
+
+  <label>Логін
+    <input type="text" id="login" autocomplete="username" required>
+  </label>
+  <label>Пароль
+    <input type="password" id="password" autocomplete="current-password" required>
+  </label>
+
+  <button type="submit" id="submitBtn">Увійти</button>
+  <p id="msg" class="msg"></p>
+
+  <a href="index.html" class="back-link">На головну</a>
+
+  <div style="margin-top: 16px; text-align: center;">
+    <button type="button" class="theme-toggle" id="themeToggle">Темна</button>
+  </div>
+</form>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbyz5cJRcFXLgTufikLWQOwstVepMnEt1UIUskYL9UMRpmSe1sa2YZ5NgxV798oDWlbM/exec';
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('msg');
+  const btn = document.getElementById('submitBtn');
+  msg.textContent = 'Перевірка...';
+  msg.className = 'msg';
+  btn.disabled = true;
+
+  const login = document.getElementById('login').value.trim();
+  const password = document.getElementById('password').value;
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'login', login, password })
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      sessionStorage.setItem('sbu_token', data.token);
+      sessionStorage.setItem('sbu_name', data.name);
+      sessionStorage.setItem('sbu_role', data.role);
+      window.location.href = 'dashboard.html';
+    } else {
+      msg.textContent = 'Невірний логін або пароль';
+      msg.className = 'msg error';
+      btn.disabled = false;
+    }
+  } catch (err) {
+    msg.textContent = 'Помилка з’єднання з сервером';
+    msg.className = 'msg error';
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

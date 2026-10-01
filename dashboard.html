@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Панель працівника - СБУ Херсон</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6e/Security_Service_of_Ukraine_Emblem.svg/1280px-Security_Service_of_Ukraine_Emblem.svg.png?utm_source=en.wikipedia.org&utm_campaign=index&utm_content=thumbnail">
+<script src="theme.js"></script>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-brand">
+    <img src="https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6e/Security_Service_of_Ukraine_Emblem.svg/1280px-Security_Service_of_Ukraine_Emblem.svg.png" alt="СБУ" class="brand-logo" width="38" height="38">
+    <div>
+      <div class="brand-title">Управління СБУ в Херсонській області</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="conn" id="conn"><span class="dot"></span> З'єднання</div>
+    <div class="clock" id="clock">--:--:--</div>
+    <div class="user-chip">
+      <span id="userName">—</span>
+      <span class="role" id="userRole">—</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle">Світла</button>
+    <a href="#" id="logout" class="logout-btn">Вийти</a>
+  </div>
+</header>
+
+<main class="app-container">
+
+  <h1 class="page-title">Службова панель</h1>
+
+  <section class="shift-card" id="shiftCard">
+    <div class="shift-left">
+      <div>
+        <div class="shift-label">Поточна зміна</div>
+        <div class="shift-timer" id="heroTimer">00:00:00</div>
+        <div class="shift-status" id="shiftStatus">Закрита</div>
+        <div class="shift-start" id="shiftStart"></div>
+      </div>
+    </div>
+    <div class="shift-actions">
+      <button id="btnStart" class="btn primary">Почати зміну</button>
+      <button id="btnEnd" class="btn danger">Закінчити зміну</button>
+    </div>
+    <p id="shiftMsg" class="shift-msg"></p>
+  </section>
+
+  <section class="stats-row">
+    <div class="stat">
+      <div class="stat-label">Сьогодні</div>
+      <div class="stat-value" id="statToday">0 год 0 хв</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">За 7 днів</div>
+      <div class="stat-value" id="statWeek">0 год 0 хв</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">За 30 днів</div>
+      <div class="stat-value" id="statMonth">0 год 0 хв</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Всього змін</div>
+      <div class="stat-value accent" id="statShifts">0</div>
+    </div>
+  </section>
+
+  <div class="two-col">
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Історія змін</h2>
+        <div class="filters">
+          <button class="chip active" data-range="today">Сьогодні</button>
+          <button class="chip" data-range="week">Тиждень</button>
+          <button class="chip" data-range="month">Місяць</button>
+          <button class="chip" data-range="all">Всі</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="historyTable">
+          <thead>
+            <tr>
+              <th>Початок</th>
+              <th>Кінець</th>
+              <th>Тривалість</th>
+              <th>Статус</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Завдання</h2>
+          <button class="chip" id="refreshTasks">Оновити</button>
+        </div>
+        <ul class="list" id="taskList"></ul>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Повідомлення</h2>
+        </div>
+        <ul class="list" id="noticeList"></ul>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Дії</h2>
+        </div>
+        <div class="quick-actions">
+          <button class="btn block" id="btnRefreshAll">Оновити дані</button>
+          <button class="btn block" id="btnReport">Надіслати звіт</button>
+          <button class="btn block" id="btnPing">Перевірити сервер</button>
+        </div>
+      </section>
+    </div>
+
+  </div>
+
+</main>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbyz5cJRcFXLgTufikLWQOwstVepMnEt1UIUskYL9UMRpmSe1sa2YZ5NgxV798oDWlbM/exec';
+const token = sessionStorage.getItem('sbu_token');
+if (!token) window.location.href = 'login.html';
+
+const $ = (id) => document.getElementById(id);
+
+const elUserName = $('userName');
+const elUserRole = $('userRole');
+const elClock = $('clock');
+const elConn = $('conn');
+const elShiftCard = $('shiftCard');
+const elHeroTimer = $('heroTimer');
+const elShiftStatus = $('shiftStatus');
+const elShiftStart = $('shiftStart');
+const elShiftMsg = $('shiftMsg');
+const elBtnStart = $('btnStart');
+const elBtnEnd = $('btnEnd');
+const elStatToday = $('statToday');
+const elStatWeek = $('statWeek');
+const elStatMonth = $('statMonth');
+const elStatShifts = $('statShifts');
+const elTaskList = $('taskList');
+const elNoticeList = $('noticeList');
+const elHistoryBody = document.querySelector('#historyTable tbody');
+
+if (elUserName) elUserName.textContent = sessionStorage.getItem('sbu_name') || '—';
+if (elUserRole) elUserRole.textContent = sessionStorage.getItem('sbu_role') || '—';
+
+let timerId = null;
+let currentRange = 'today';
+
+async function api(action, extra = {}) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action, token, ...extra })
+  });
+  return res.json();
+}
+
+function pad(n) { return String(n).padStart(2, '0'); }
+
+function updateClock() {
+  if (!elClock) return;
+  const now = new Date();
+  elClock.textContent = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+function setConn(ok) {
+  if (!elConn) return;
+  elConn.className = 'conn ' + (ok ? 'ok' : 'bad');
+  elConn.innerHTML = '<span class="dot"></span> ' + (ok ? 'З\'єднання' : 'Офлайн');
+}
+
+function setActiveUI(active, start) {
+  if (elBtnStart) elBtnStart.disabled = active;
+  if (elBtnEnd) elBtnEnd.disabled = !active;
+  if (elShiftStatus) {
+    elShiftStatus.textContent = active ? 'Активна' : 'Закрита';
+    elShiftStatus.className = 'shift-status' + (active ? ' active' : '');
+  }
+  if (elShiftCard) elShiftCard.classList.toggle('active', active);
+  if (elShiftStart) elShiftStart.textContent = active && start ? 'Початок: ' + start : '';
+
+  if (active && start) startTimer(start); else stopTimer();
+}
+
+function startTimer(startStr) {
+  stopTimer();
+  if (!elHeroTimer) return;
+  const startMs = new Date(startStr.replace(' ', 'T')).getTime();
+  const tick = () => {
+    const diff = Math.max(0, Date.now() - startMs);
+    elHeroTimer.textContent =
+      pad(Math.floor(diff / 3600000)) + ':' +
+      pad(Math.floor((diff % 3600000) / 60000)) + ':' +
+      pad(Math.floor((diff % 60000) / 1000));
+  };
+  tick();
+  timerId = setInterval(tick, 1000);
+}
+
+function stopTimer() {
+  if (timerId) { clearInterval(timerId); timerId = null; }
+  if (elHeroTimer) elHeroTimer.textContent = '00:00:00';
+}
+
+async function refreshStatus() {
+  try {
+    const data = await api('shift_status');
+    setConn(data.ok);
+    if (data.ok) setActiveUI(data.active, data.start);
+  } catch (e) {
+    setConn(false);
+  }
+}
+
+async function loadStats() {
+  try {
+    const data = await api('dashboard_stats');
+    setConn(data.ok);
+    if (!data.ok) return;
+    if (elStatToday) elStatToday.textContent = data.today_human;
+    if (elStatWeek) elStatWeek.textContent = data.week_human;
+    if (elStatMonth) elStatMonth.textContent = data.month_human;
+    if (elStatShifts) elStatShifts.textContent = data.total_shifts;
+  } catch (e) {
+    setConn(false);
+  }
+}
+
+async function loadHistory(range) {
+  currentRange = range || currentRange;
+  if (!elHistoryBody) return;
+  try {
+    const data = await api('shift_history_filtered', { range: currentRange });
+    elHistoryBody.innerHTML = '';
+    if (!data.ok || !data.items.length) {
+      elHistoryBody.innerHTML = '<tr><td colspan="4" class="msg">Немає записів</td></tr>';
+      return;
+    }
+    data.items.forEach(it => {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="mono">' + (it.start || '—') + '</td>' +
+        '<td class="mono">' + (it.end || '—') + '</td>' +
+        '<td>' + (it.duration_human || '—') + '</td>' +
+        '<td><span class="badge' + (it.status === 'active' ? ' active' : '') + '">' +
+          (it.status === 'active' ? 'Активна' : 'Закрита') + '</span></td>';
+      elHistoryBody.appendChild(tr);
+    });
+  } catch (e) {
+    elHistoryBody.innerHTML = '<tr><td colspan="4" class="msg error">Помилка завантаження</td></tr>';
+  }
+}
+
+async function loadTasks() {
+  if (!elTaskList) return;
+  try {
+    const data = await api('tasks_list');
+    elTaskList.innerHTML = '';
+    if (!data.ok || !data.items.length) {
+      elTaskList.innerHTML = '<li><div class="item-meta">Немає активних завдань</div></li>';
+      return;
+    }
+    data.items.forEach(t => {
+      const li = document.createElement('li');
+      li.className = 'priority-' + (t.priority || 'normal');
+      li.innerHTML =
+        '<div class="item-title">' + t.title + '</div>' +
+        '<div class="item-meta">' +
+          '<span>' + (t.status || 'open') + '</span>' +
+          (t.due ? '<span>до ' + t.due + '</span>' : '') +
+        '</div>';
+      elTaskList.appendChild(li);
+    });
+  } catch (e) {
+    elTaskList.innerHTML = '<li><div class="item-meta">Помилка завантаження</div></li>';
+  }
+}
+
+async function loadNotices() {
+  if (!elNoticeList) return;
+  try {
+    const data = await api('notices_list');
+    elNoticeList.innerHTML = '';
+    if (!data.ok || !data.items.length) {
+      elNoticeList.innerHTML = '<li><div class="item-meta">Немає повідомлень</div></li>';
+      return;
+    }
+    data.items.forEach(n => {
+      const li = document.createElement('li');
+      li.className = 'notice-' + (n.level || 'info');
+      li.innerHTML =
+        '<div class="item-title">' + n.title + '</div>' +
+        '<div class="item-body">' + n.body + '</div>' +
+        '<div class="item-meta" style="margin-top:4px;">' + n.date + '</div>';
+      elNoticeList.appendChild(li);
+    });
+  } catch (e) {
+    elNoticeList.innerHTML = '<li><div class="item-meta">Помилка завантаження</div></li>';
+  }
+}
+
+if (elBtnStart) {
+  elBtnStart.addEventListener('click', async () => {
+    if (elShiftMsg) { elShiftMsg.textContent = 'Відкриття зміни...'; elShiftMsg.className = 'shift-msg'; }
+    try {
+      const data = await api('shift_start');
+      if (data.ok) {
+        if (elShiftMsg) elShiftMsg.textContent = 'Зміну відкрито о ' + data.start;
+        refreshStatus(); loadStats(); loadHistory();
+      } else if (data.error === 'already_active') {
+        if (elShiftMsg) { elShiftMsg.textContent = 'Зміна вже активна з ' + data.start; elShiftMsg.className = 'shift-msg error'; }
+        refreshStatus();
+      } else {
+        if (elShiftMsg) { elShiftMsg.textContent = 'Помилка: ' + data.error; elShiftMsg.className = 'shift-msg error'; }
+      }
+    } catch (e) {
+      if (elShiftMsg) { elShiftMsg.textContent = 'Помилка з\'єднання'; elShiftMsg.className = 'shift-msg error'; }
+    }
+  });
+}
+
+if (elBtnEnd) {
+  elBtnEnd.addEventListener('click', async () => {
+    if (elShiftMsg) { elShiftMsg.textContent = 'Закриття зміни...'; elShiftMsg.className = 'shift-msg'; }
+    try {
+      const data = await api('shift_end');
+      if (data.ok) {
+        if (elShiftMsg) elShiftMsg.textContent = 'Зміну закрито. Тривалість: ' + data.duration_human;
+        refreshStatus(); loadStats(); loadHistory();
+      } else {
+        if (elShiftMsg) { elShiftMsg.textContent = 'Помилка: ' + data.error; elShiftMsg.className = 'shift-msg error'; }
+      }
+    } catch (e) {
+      if (elShiftMsg) { elShiftMsg.textContent = 'Помилка з\'єднання'; elShiftMsg.className = 'shift-msg error'; }
+    }
+  });
+}
+
+document.querySelectorAll('.filters .chip').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filters .chip').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadHistory(btn.dataset.range);
+  });
+});
+
+const elRefreshTasks = $('refreshTasks');
+if (elRefreshTasks) elRefreshTasks.addEventListener('click', loadTasks);
+
+const elBtnRefreshAll = $('btnRefreshAll');
+if (elBtnRefreshAll) {
+  elBtnRefreshAll.addEventListener('click', () => {
+    refreshStatus(); loadStats(); loadHistory(); loadTasks(); loadNotices();
+  });
+}
+
+const elBtnReport = $('btnReport');
+if (elBtnReport) {
+  elBtnReport.addEventListener('click', async () => {
+    try {
+      const data = await api('report_manual');
+      if (elShiftMsg) {
+        elShiftMsg.textContent = data.ok ? 'Звіт надіслано' : 'Помилка надсилання';
+        elShiftMsg.className = data.ok ? 'shift-msg' : 'shift-msg error';
+      }
+    } catch (e) {
+      if (elShiftMsg) { elShiftMsg.textContent = 'Помилка з\'єднання'; elShiftMsg.className = 'shift-msg error'; }
+    }
+  });
+}
+
+const elBtnPing = $('btnPing');
+if (elBtnPing) {
+  elBtnPing.addEventListener('click', async () => {
+    const t0 = Date.now();
+    try {
+      const data = await api('shift_status');
+      const dt = Date.now() - t0;
+      setConn(data.ok);
+      if (elShiftMsg) {
+        elShiftMsg.textContent = data.ok ? 'Сервер: ' + dt + ' мс' : 'Сервер недоступний';
+        elShiftMsg.className = data.ok ? 'shift-msg' : 'shift-msg error';
+      }
+    } catch (e) {
+      setConn(false);
+      if (elShiftMsg) { elShiftMsg.textContent = 'Сервер недоступний'; elShiftMsg.className = 'shift-msg error'; }
+    }
+  });
+}
+
+const elLogout = $('logout');
+if (elLogout) {
+  elLogout.addEventListener('click', (e) => {
+    e.preventDefault();
+    sessionStorage.clear();
+    window.location.href = 'index.html';
+  });
+}
+
+refreshStatus();
+loadStats();
+loadHistory();
+loadTasks();
+loadNotices();
+
+setInterval(() => { refreshStatus(); loadStats(); }, 60000);
+</script>
+</body>
+</html>
