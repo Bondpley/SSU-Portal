@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>ЄРДР - Створення витягу</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Security_Service_of_Ukraine_Emblem.svg/1280px-Security_Service_of_Ukraine_Emblem.svg.png">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="assets.js"></script>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-brand">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Security_Service_of_Ukraine_Emblem.svg/1280px-Security_Service_of_Ukraine_Emblem.svg.png" width="38" height="38" alt="СБУ">
+    <div>
+      <div class="brand-title">ЄРДР - Створення витягу</div>
+      <div class="brand-sub" id="headerDate">—</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="clock" id="clock">--:--:--</div>
+    <div class="user-chip">
+      <span id="userName">—</span>
+      <span class="role" id="userRole">—</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle">Світла</button>
+    <a href="dashboard.html" class="logout-btn">До панелі</a>
+  </div>
+</header>
+
+<main class="app-container">
+
+  <h1 class="page-title">Створення витягу з ЄРДР</h1>
+
+  <div class="two-col">
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Дані провадження</h2>
+      </div>
+
+      <form id="erdrForm">
+        <label class="erdr-label">Номер кримінального провадження
+          <input type="text" id="caseNumber" class="erdr-input"
+                 placeholder="42023000000000436" required>
+        </label>
+
+        <label class="erdr-label">Дата надходження заяви
+          <input type="date" id="reportDate" class="erdr-input" required>
+        </label>
+
+        <label class="erdr-label">ПІБ потерпілого / заявника
+          <input type="text" id="victim" class="erdr-input"
+                 placeholder="Снісар Олександр Миколайович" required>
+        </label>
+
+        <label class="erdr-label">Правова кваліфікація
+          <input type="text" id="qualification" class="erdr-input"
+                 placeholder="(КК України 2001) СТ.368-5" required>
+        </label>
+
+        <label class="erdr-label">Орган досудового розслідування
+          <input type="text" id="agency" class="erdr-input"
+                 value="Управління СБУ в Херсонській області">
+        </label>
+
+        <label class="erdr-label">ПІБ прокурорів (через кому)
+          <input type="text" id="prosecutors" class="erdr-input"
+                 placeholder="Луговськой О.С., Колотило О.О., Хить Ю.П.">
+        </label>
+
+        <label class="erdr-label">Короткий виклад обставин
+          <textarea id="description" class="erdr-textarea" rows="8" required
+                    placeholder="Викладіть суть кримінального правопорушення"></textarea>
+        </label>
+
+        <button type="submit" class="btn primary block">Сформувати витяг</button>
+        <p id="formMsg" class="msg"></p>
+      </form>
+    </section>
+
+    <div>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Останні витяги</h2>
+          <button class="chip" id="clearList">Очистити</button>
+        </div>
+        <ul class="list" id="erdrList"></ul>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Дії</h2>
+        </div>
+        <div class="quick-actions">
+          <button class="btn block" id="btnPing">Перевірити сервер</button>
+          <button class="btn block" id="btnDiscord">Тест Discord</button>
+        </div>
+      </section>
+    </div>
+
+  </div>
+
+</main>
+
+<script>
+const DISCORD_WEBHOOK_URL =
+  'https://discord.com/api/webhooks/1473694127270006960/BSaMSgRH0R22H3T2DOju0CzXKsrvaf_dO35p-VOsjmeevUMOFpwWG-Flg-d84rJwbs7i';
+
+const FONT_URL =
+  'https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans.ttf';
+
+const FONT_URL_BOLD =
+  'https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans-Bold.ttf';
+
+const token = sessionStorage.getItem('sbu_token');
+if (!token) window.location.href = 'login.html';
+
+const userName = sessionStorage.getItem('sbu_name') || 'Невідомий';
+const userRole = sessionStorage.getItem('sbu_role') || '—';
+
+document.getElementById('userName').textContent = userName;
+document.getElementById('userRole').textContent = userRole;
+
+function pad(n) { return String(n).padStart(2, '0'); }
+
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+  document.getElementById('headerDate').textContent =
+    now.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+let fontCache = { regular: null, bold: null };
+
+async function fetchFontAsBase64(url) {
+  const res = await fetch(url);
+  const buf = await res.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+async function loadFonts(doc) {
+  if (!fontCache.regular) {
+    fontCache.regular = await fetchFontAsBase64(FONT_URL);
+  }
+  if (!fontCache.bold) {
+    try {
+      fontCache.bold = await fetchFontAsBase64(FONT_URL_BOLD);
+    } catch (e) {
+      fontCache.bold = fontCache.regular;
+    }
+  }
+
+  doc.addFileToVFS('DejaVuSans.ttf', fontCache.regular);
+  doc.addFont('DejaVuSans.ttf', 'DejaVu', 'normal');
+
+  doc.addFileToVFS('DejaVuSans-Bold.ttf', fontCache.bold);
+  doc.addFont('DejaVuSans-Bold.ttf', 'DejaVu', 'bold');
+
+  doc.setFont('DejaVu', 'normal');
+}
+
+async function generateERDRPdf(data) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+
+  await loadFonts(doc);
+
+  const pageW = 210;
+  const marginL = 15;
+  const marginR = 15;
+  const contentW = pageW - marginL - marginR;
+  const labelW = contentW * 0.58;
+  const valueW = contentW - labelW;
+
+  const logoSize = 22;
+  const logoX = (pageW - logoSize) / 2;
+  const logoY = 8;
+
+  if (window.GERB_BASE64) {
+    try {
+      doc.addImage(window.GERB_BASE64, 'PNG', logoX, logoY, logoSize, logoSize);
+    } catch (e) {}
+  }
+
+  const wmSrc = window.ERDRLOGO_BASE64 || window.GERB_BASE64;
+  if (wmSrc) {
+    try {
+      doc.setGState(new doc.GState({ opacity: 0.06 }));
+      const wmSize = 55;
+      const wmPositions = [
+        [pageW / 2 - wmSize / 2, 55],
+        [pageW / 2 - wmSize / 2, 130],
+        [pageW / 2 - wmSize / 2, 205],
+        [pageW / 2 - wmSize / 2, 275]
+      ];
+      wmPositions.forEach(([x, py]) => {
+        doc.addImage(wmSrc, 'PNG', x, py, wmSize, wmSize);
+      });
+      doc.setGState(new doc.GState({ opacity: 1 }));
+    } catch (e) {}
+  }
+
+  let y = 35;
+
+  doc.setFont('DejaVu', 'normal');
+  doc.setFontSize(14);
+  doc.text('ВИТЯГ', pageW / 2, y, { align: 'center' });
+  y += 8;
+
+  doc.setFontSize(11);
+  doc.setFont('DejaVu', 'bold');
+  doc.text('З ЄДИНОГО РЕЄСТРУ ДОСУДОВИХ РОЗСЛІДУВАНЬ',
+           pageW / 2, y, { align: 'center' });
+  doc.setFont('DejaVu', 'normal');
+  y += 6;
+
+  doc.setDrawColor(0);
+  doc.setLineWidth(0.4);
+  doc.line(marginL, y, pageW - marginR, y);
+  y += 7;
+
+  doc.setFontSize(10);
+  doc.text('Номер кримінального провадження:', marginL, y);
+  doc.setFont('DejaVu', 'bold');
+  doc.text(String(data.caseNumber), marginL + 78, y);
+  doc.setFont('DejaVu', 'normal');
+  y += 7;
+
+  doc.setFontSize(9);
+  doc.text('Дата реєстрації провадження (виділення матеріалів', marginL, y);
+  doc.text(data.registrationDate, marginL + 130, y);
+  y += 4;
+  doc.text('досудового розслідування):', marginL, y);
+  doc.text(data.registrationTime, marginL + 130, y);
+  y += 7;
+
+  doc.setFontSize(10);
+  doc.setFont('DejaVu', 'bold');
+  doc.text('№1', marginL, y);
+  doc.setFont('DejaVu', 'normal');
+  y += 2;
+
+  function drawRow(label, value) {
+    const labelLines = doc.splitTextToSize(label, labelW - 6);
+    const valueLines = value
+      ? doc.splitTextToSize(String(value), valueW - 6)
+      : [''];
+
+    const rowH = Math.max(labelLines.length, valueLines.length) * 3.6 + 4;
+
+    doc.setDrawColor(140);
+    doc.setLineWidth(0.15);
+    doc.line(marginL, y, pageW - marginR, y);
+
+    doc.setFontSize(8);
+    doc.setFont('DejaVu', 'normal');
+    doc.text(labelLines, marginL + 2, y + 4);
+
+    if (value) {
+      doc.text(valueLines, marginL + labelW + 2, y + 4);
+    }
+
+    y += rowH;
+  }
+
+  drawRow(
+    'Дата надходження заяви, повідомлення про вчинення кримінального правопорушення або виявлення з іншого джерела обставин, що можуть свідчити про вчинення кримінального правопорушення:',
+    data.reportDate
+  );
+
+  drawRow(
+    'ПІБ потерпілого, заявника (найменування юридичної особи та код ЄДР юридичних осіб, фізичних осіб – підприємців та громадських формувань):',
+    data.victim
+  );
+
+  drawRow(
+    'Дата та час внесення до ЄРДР відомостей про заяву, повідомлення про вчинення кримінального правопорушення або виявлення з іншого джерела обставин, що можуть свідчити про вчинення кримінального правопорушення:',
+    data.entryDateTime
+  );
+
+  drawRow(
+    'Правова кваліфікація кримінального правопорушення:',
+    data.qualification
+  );
+
+  doc.setDrawColor(140);
+  doc.setLineWidth(0.15);
+  doc.line(marginL, y, pageW - marginR, y);
+
+  doc.setFontSize(9);
+  doc.setFont('DejaVu', 'bold');
+  doc.text('Короткий виклад обставин, що можуть свідчити про вчинення кримінального правопорушення:',
+           marginL + 2, y + 5);
+  doc.setFont('DejaVu', 'normal');
+  y += 9;
+
+  doc.setFontSize(8);
+  const descLines = doc.splitTextToSize(data.description, contentW - 12);
+  doc.text(descLines, marginL + 6, y, { align: 'justify', maxWidth: contentW - 12 });
+  y += descLines.length * 4 + 3;
+
+  drawRow(
+    'ПІБ, дата народження особи, яку повідомлено про підозру, наслідки розслідування щодо особи та відомості про здійснення спеціального досудового розслідування щодо неї:',
+    ''
+  );
+
+  drawRow(
+    'Найменування та код ЄДР юридичної особи, щодо якої здійснюється провадження, ПІБ представника юридичної особи:',
+    ''
+  );
+
+  drawRow(
+    'Наслідок розслідування кримінального правопорушення:',
+    ''
+  );
+
+  y += 3;
+  doc.setFontSize(9);
+  doc.text('Орган досудового розслідування:', marginL, y);
+  doc.setFont('DejaVu', 'bold');
+  doc.text(data.agency, marginL + 62, y);
+  doc.setFont('DejaVu', 'normal');
+  y += 8;
+
+  doc.setFontSize(8);
+  const invLabel = doc.splitTextToSize(
+    'ПІБ слідчого (слідчих)/дізнавача, який (які) здійснює(ють) досудове розслідування:',
+    labelW - 6
+  );
+  doc.text(invLabel, marginL + 2, y);
+  y += invLabel.length * 3.6 + 3;
+
+  doc.setDrawColor(140);
+  doc.setLineWidth(0.15);
+  doc.line(marginL, y, pageW - marginR, y);
+  y += 5;
+
+  const prosLabel = doc.splitTextToSize(
+    'ПІБ прокурора (прокурорів), який (які) здійснює(ють) процесуальне керівництво:',
+    labelW - 6
+  );
+  doc.text(prosLabel, marginL + 2, y);
+
+  if (data.prosecutors) {
+    const prosValue = doc.splitTextToSize(data.prosecutors, valueW - 6);
+    doc.text(prosValue, marginL + labelW + 2, y);
+    y += Math.max(prosLabel.length, prosValue.length) * 3.6 + 4;
+  } else {
+    y += prosLabel.length * 3.6 + 4;
+  }
+
+  y += 2;
+  doc.setFontSize(9);
+  doc.text('Підпис реєстратора', marginL, y);
+  doc.setDrawColor(0);
+  doc.setLineWidth(0.3);
+  doc.line(marginL + 34, y + 0.5, marginL + 80, y + 0.5);
+  doc.setFont('DejaVu', 'bold');
+  doc.text(data.registrar || userName, marginL + 83, y);
+  doc.setFont('DejaVu', 'normal');
+  y += 8;
+
+  doc.setFontSize(9);
+  doc.text('Прокурор відділу', marginL, y);
+  y += 5;
+  doc.text(data.registrationDate, marginL, y);
+  y += 10;
+
+  try {
+    const qrDiv = document.createElement('div');
+    new QRCode(qrDiv, {
+      text: data.caseNumber,
+      width: 200,
+      height: 200,
+      correctLevel: QRCode.CorrectLevel.M
+    });
+    await new Promise(r => setTimeout(r, 180));
+
+    const qrCanvas = qrDiv.querySelector('canvas');
+    if (qrCanvas) {
+      doc.addImage(qrCanvas.toDataURL('image/png'), 'PNG', marginL, y, 32, 32);
+    }
+  } catch (e) {
+    console.warn('QR generation failed', e);
+  }
+
+  return doc;
+}
+
+function sendPDFToDiscord(blob, name, data) {
+  const fd = new FormData();
+  fd.append('file', blob, name);
+  fd.append('payload_json', JSON.stringify({
+    content: `**Витяг з ЄРДР**\nПровадження: ${data.caseNumber}\nРеєстратор: ${data.registrar}`,
+    embeds: [{
+      title: 'Створено витяг',
+      color: 0x22c55e,
+      fields: [
+        { name: 'Номер провадження', value: data.caseNumber, inline: true },
+        { name: 'Дата реєстрації', value: data.registrationDate, inline: true },
+        { name: 'Орган', value: data.agency, inline: false },
+        { name: 'Заявник', value: data.victim, inline: false },
+        { name: 'Кваліфікація', value: data.qualification, inline: false }
+      ],
+      timestamp: new Date().toISOString()
+    }]
+  }));
+
+  fetch(DISCORD_WEBHOOK_URL, { method: 'POST', body: fd })
+    .catch(() => console.warn('Discord PDF upload failed'));
+}
+
+function sendEmbedToDiscord(data) {
+  fetch(DISCORD_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      embeds: [{
+        title: 'Нове кримінальне провадження',
+        color: 0x2f6fdb,
+        fields: [
+          { name: 'Номер', value: data.caseNumber, inline: true },
+          { name: 'Дата', value: data.reportDate, inline: true },
+          { name: 'Заявник', value: data.victim, inline: false },
+          { name: 'Кваліфікація', value: data.qualification, inline: true },
+          { name: 'Орган', value: data.agency, inline: true },
+          { name: 'Реєстратор', value: data.registrar, inline: true }
+        ],
+        timestamp: new Date().toISOString()
+      }]
+    })
+  }).catch(() => console.warn('Discord embed failed'));
+}
+
+const erdrList = document.getElementById('erdrList');
+let items = JSON.parse(sessionStorage.getItem('erdr_items') || '[]');
+
+function renderList() {
+  erdrList.innerHTML = '';
+  if (!items.length) {
+    erdrList.innerHTML = '<li><div class="item-meta">Немає витягів</div></li>';
+    return;
+  }
+  items.forEach(it => {
+    const li = document.createElement('li');
+    li.className = 'priority-normal';
+    li.innerHTML =
+      '<div class="item-title">' + it.caseNumber + '</div>' +
+      '<div class="item-meta">' +
+        '<span>' + it.reportDate + '</span>' +
+        '<span>' + it.victim + '</span>' +
+      '</div>';
+    erdrList.appendChild(li);
+  });
+}
+
+renderList();
+
+document.getElementById('erdrForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const msg = document.getElementById('formMsg');
+  msg.textContent = 'Генерація PDF...';
+  msg.className = 'msg';
+
+  const now = new Date();
+
+  const data = {
+    caseNumber: document.getElementById('caseNumber').value.trim(),
+    reportDate: document.getElementById('reportDate').value,
+    victim: document.getElementById('victim').value.trim(),
+    qualification: document.getElementById('qualification').value.trim(),
+    agency: document.getElementById('agency').value.trim() || 'Управління СБУ в Херсонській області',
+    prosecutors: document.getElementById('prosecutors').value.trim(),
+    description: document.getElementById('description').value.trim(),
+    registrationDate: now.toLocaleDateString('uk-UA'),
+    registrationTime: now.toLocaleTimeString('uk-UA'),
+    entryDateTime: now.toLocaleString('uk-UA'),
+    registrar: userName
+  };
+
+  try {
+    const doc = await generateERDRPdf(data);
+    const blob = doc.output('blob');
+    const fileName = data.caseNumber + '.pdf';
+
+    doc.save(fileName);
+    sendPDFToDiscord(blob, fileName, data);
+    sendEmbedToDiscord(data);
+
+    items.unshift({
+      caseNumber: data.caseNumber,
+      reportDate: data.reportDate,
+      victim: data.victim
+    });
+    if (items.length > 30) items = items.slice(0, 30);
+    sessionStorage.setItem('erdr_items', JSON.stringify(items));
+    renderList();
+
+    msg.textContent = 'Витяг ' + data.caseNumber + ' створено і надіслано';
+    msg.className = 'msg';
+
+    e.target.reset();
+    document.getElementById('agency').value = 'Управління СБУ в Херсонській області';
+  } catch (err) {
+    console.error(err);
+    msg.textContent = 'Помилка: ' + err.message;
+    msg.className = 'msg error';
+  }
+});
+
+document.getElementById('clearList').addEventListener('click', () => {
+  items = [];
+  sessionStorage.removeItem('erdr_items');
+  renderList();
+});
+
+document.getElementById('btnPing').addEventListener('click', () => {
+  const msg = document.getElementById('formMsg');
+  msg.textContent = 'OK - ' + new Date().toLocaleTimeString('uk-UA');
+  msg.className = 'msg';
+});
+
+document.getElementById('btnDiscord').addEventListener('click', () => {
+  fetch(DISCORD_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: 'Тестове повідомлення з ЄРДР' })
+  }).then(() => {
+    const msg = document.getElementById('formMsg');
+    msg.textContent = 'Тест надіслано в Discord';
+    msg.className = 'msg';
+  }).catch(() => {
+    const msg = document.getElementById('formMsg');
+    msg.textContent = 'Не вдалося надіслати в Discord';
+    msg.className = 'msg error';
+  });
+});
+
+</script>
+</body>
+</html>
