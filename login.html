@@ -63,6 +63,8 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
       sessionStorage.setItem('sbu_token', data.token);
       sessionStorage.setItem('sbu_name', data.name);
       sessionStorage.setItem('sbu_role', data.role);
+      sessionStorage.setItem('sbu_login', login);
+      sessionStorage.setItem('sbu_dept', data.dept || 'sbu');
       window.location.href = 'dashboard.html';
     } else {
       msg.textContent = 'Невірний логін або пароль';

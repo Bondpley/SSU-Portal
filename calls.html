@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Виклики - СБУ Херсон</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Security_Service_of_Ukraine_Emblem.svg/1280px-Security_Service_of_Ukraine_Emblem.svg.png">
+<script src="theme.js"></script>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-brand">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Security_Service_of_Ukraine_Emblem.svg/1280px-Security_Service_of_Ukraine_Emblem.svg.png" width="38" height="38" alt="СБУ">
+    <div>
+      <div class="brand-title">СБУ - ХЕРСОН</div>
+      <div class="brand-sub">Журнал викликів</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="conn" id="conn"><span class="dot"></span> З'єднання</div>
+    <div class="clock" id="clock">--:--:--</div>
+    <div class="user-chip">
+      <span id="userName">—</span>
+      <span class="role" id="userRole">—</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle">Світла</button>
+    <a href="dashboard.html" class="logout-btn">До панелі</a>
+  </div>
+</header>
+
+<main class="app-container">
+
+  <h1 class="page-title">Журнал викликів</h1>
+
+  <section class="stats-row">
+    <div class="stat">
+      <div class="stat-label">Сьогодні</div>
+      <div class="stat-value" id="statToday">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Всього</div>
+      <div class="stat-value" id="statTotal">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Нові</div>
+      <div class="stat-value accent" id="statNew">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">В роботі</div>
+      <div class="stat-value" id="statInProgress">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Закрито</div>
+      <div class="stat-value" id="statDone">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Мої активні</div>
+      <div class="stat-value accent" id="statMine">0</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Фільтри</h2>
+      <div class="filters">
+        <button class="chip active" data-filter="all">Всі</button>
+        <button class="chip" data-filter="new">Нові</button>
+        <button class="chip" data-filter="in_progress">В роботі</button>
+        <button class="chip" data-filter="done">Закрито</button>
+        <button class="chip" data-filter="canceled">Скасовано</button>
+        <button class="chip" id="chipMine">Мої</button>
+      </div>
+    </div>
+
+    <div class="panel-head">
+      <h2>Тип</h2>
+      <div class="filters">
+        <button class="chip active" data-type="all">Всі</button>
+        <button class="chip" data-type="102">Поліція (102)</button>
+        <button class="chip" data-type="103">Швидка (103)</button>
+        <button class="chip" data-type="101">Пожежна (101)</button>
+        <button class="chip" data-type="other">Інше</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Список викликів</h2>
+      <div class="filters">
+        <button class="chip" id="btnRefresh">Оновити</button>
+        <button class="chip" id="btnAuto">Авто: УВІМК</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table" id="callsTable">
+        <thead>
+          <tr>
+            <th>№</th>
+            <th>Час</th>
+            <th>Тип</th>
+            <th>Заявник</th>
+            <th>Локація</th>
+            <th>Опис</th>
+            <th>Статус</th>
+            <th>Прийняв</th>
+            <th>Дії</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="callsMsg" class="msg"></p>
+  </section>
+  <audio id="newCallSound" src="call.mp3" preload="auto"></audio>
+
+</main>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbzuFd1h8QtL1cSww9vYHOCyl6xlany2Nwat_fiLxvgQZ0NQ8MO--_yt-9CSIyj4sc6SXg/exec';
+const token = sessionStorage.getItem('sbu_token');
+if (!token) window.location.href = 'login.html';
+
+const $ = (id) => document.getElementById(id);
+const currentUser = sessionStorage.getItem('sbu_name') || 'Невідомий';
+const currentLogin = sessionStorage.getItem('sbu_login') || currentUser;
+const currentDept = (sessionStorage.getItem('sbu_dept') || 'sbu').toLowerCase();
+
+$('userName').textContent = currentUser;
+$('userRole').textContent = sessionStorage.getItem('sbu_role') || '—';
+
+let filterStatus = 'all';
+let filterType = 'all';
+let filterMine = false;
+let autoRefreshId = null;
+let autoRefreshOn = true;
+let currentVersion = '0';
+
+async function api(action, extra = {}) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    body: JSON.stringify({
+      action,
+      login: currentLogin,
+      name: currentUser,
+      dept: currentDept,
+      ...extra
+    })
+  });
+  return res.json();
+}
+
+function pad(n) { return String(n).padStart(2, '0'); }
+
+function updateClock() {
+  const now = new Date();
+  $('clock').textContent = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+function setConn(ok) {
+  const el = $('conn');
+  el.className = 'conn ' + (ok ? 'ok' : 'bad');
+  el.innerHTML = '<span class="dot"></span> ' + (ok ? 'З\'єднання' : 'Офлайн');
+}
+
+const statusText = {
+  'new': 'Новий',
+  'in_progress': 'В роботі',
+  'done': 'Закрито',
+  'canceled': 'Скасовано'
+};
+
+const typeText = {
+  '102': 'Поліція',
+  '103': 'Швидка',
+  '101': 'Пожежна',
+  'other': 'Інше'
+};
+
+const typeIcon = {
+  '102': '',
+  '103': '',
+  '101': '',
+  'other': ''
+};
+
+let knownCallIds = new Set();
+let soundUnlocked = false;
+let soundLoopId = null;
+let soundBannerTimeout = null;
+const newCallSound = document.getElementById('newCallSound');
+
+function playNewCallSound() {
+  if (!newCallSound) return;
+  try {
+    newCallSound.currentTime = 0;
+    newCallSound.volume = 1.0;
+    const p = newCallSound.play();
+    if (p && p.catch) p.catch(() => {});
+  } catch (e) {}
+}
+
+function startSoundLoop() {
+  stopSoundLoop();
+  playNewCallSound();
+  soundLoopId = setInterval(playNewCallSound, 3000);
+}
+
+function stopSoundLoop() {
+  if (soundLoopId) {
+    clearInterval(soundLoopId);
+    soundLoopId = null;
+  }
+}
+
+function unlockSound() {
+  if (soundUnlocked) return;
+  soundUnlocked = true;
+  if (newCallSound) {
+    newCallSound.volume = 0;
+    newCallSound.play().then(() => {
+      newCallSound.pause();
+      newCallSound.currentTime = 0;
+      newCallSound.volume = 1.0;
+    }).catch(() => {});
+  }
+  document.removeEventListener('click', unlockSound);
+  document.removeEventListener('keydown', unlockSound);
+}
+document.addEventListener('click', unlockSound);
+document.addEventListener('keydown', unlockSound);
+
+function detectNewCalls(items) {
+  const currentIds = new Set(items.map(c => String(c.id)));
+  let hasNew = false;
+
+  if (knownCallIds.size === 0) {
+    knownCallIds = currentIds;
+    return;
+  }
+
+  for (const id of currentIds) {
+    if (!knownCallIds.has(id)) {
+      hasNew = true;
+      break;
+    }
+  }
+
+  const hasNewItems = items.some(c => c.status === 'new');
+
+  if (hasNew) {
+    startSoundLoop();
+    showNewCallBanner();
+  } else if (!hasNewItems) {
+    stopSoundLoop();
+  }
+
+  knownCallIds = currentIds;
+}
+
+function showNewCallBanner() {
+  let banner = document.getElementById('newCallBanner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'newCallBanner';
+    banner.className = 'new-call-banner';
+    banner.textContent = 'НОВИЙ ВИКЛИК';
+    document.body.appendChild(banner);
+  }
+  banner.classList.add('show');
+  if (soundBannerTimeout) clearTimeout(soundBannerTimeout);
+  soundBannerTimeout = setTimeout(() => {
+    banner.classList.remove('show');
+  }, 5000);
+}
+
+document.addEventListener('click', (e) => {
+  if (e.target.closest('button[data-action]')) {
+    stopSoundLoop();
+  }
+});
+
+async function loadStats() {
+  const data = await api('stats', { currentUser });
+  setConn(data.ok);
+  if (!data.ok) return;
+  $('statToday').textContent = data.stats.today;
+  $('statTotal').textContent = data.stats.total;
+  $('statNew').textContent = data.stats.new;
+  $('statInProgress').textContent = data.stats.in_progress;
+  $('statDone').textContent = data.stats.done;
+  $('statMine').textContent = data.stats.mine;
+}
+
+async function loadCalls() {
+  const data = await api('list_calls', {
+    status: filterStatus,
+    type: filterType,
+    mine: filterMine,
+    currentUser: currentUser,
+    limit: 200
+  });
+
+  if (data.version) currentVersion = data.version;
+
+  const tbody = document.querySelector('#callsTable tbody');
+  tbody.innerHTML = '';
+
+  if (!data.ok || !data.items.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="msg">Немає викликів</td></tr>';
+    return;
+  }
+
+  detectNewCalls(data.items);
+
+  data.items.forEach(c => {
+    const tr = document.createElement('tr');
+    tr.className = 'call-row status-' + c.status;
+
+    const isMine = c.accepted_by === currentUser;
+    const canAccept = c.status === 'new' || (c.status === 'in_progress' && !c.accepted_by);
+    const canFinish = isMine && (c.status === 'in_progress');
+    const canRelease = isMine && c.status === 'in_progress';
+
+    let actionsHtml = '';
+    if (canAccept) {
+      actionsHtml += '<button class="btn small primary" data-action="accept" data-id="' + c.id + '">Прийняти</button>';
+    }
+    if (canFinish) {
+      actionsHtml += '<button class="btn small" data-action="done" data-id="' + c.id + '">Закрити</button>';
+      actionsHtml += '<button class="btn small danger" data-action="canceled" data-id="' + c.id + '">Скасувати</button>';
+    }
+    if (canRelease) {
+      actionsHtml += '<button class="btn small" data-action="release" data-id="' + c.id + '">Відпустити</button>';
+    }
+
+    const acceptedHtml = c.accepted_by
+      ? '<div class="accepted-info">' +
+          (isMine ? '<span class="you-badge">ВИ</span> ' : '') +
+          '<span>' + c.accepted_by + '</span>' +
+          '<span class="muted">' + (c.accepted_at || '') + '</span>' +
+        '</div>'
+      : '<span class="muted">—</span>';
+
+    tr.innerHTML =
+      '<td class="mono">' + c.id + '</td>' +
+      '<td class="mono">' + c.time + '</td>' +
+      '<td>' + (typeIcon[c.type] || '📞') + ' ' + (typeText[c.type] || c.type) + '</td>' +
+      '<td>' + c.caller + '</td>' +
+      '<td>' + (c.location || '—') + '</td>' +
+      '<td class="call-desc">' + (c.description || '—') + '</td>' +
+      '<td><span class="badge ' + c.status + '">' + (statusText[c.status] || c.status) + '</span></td>' +
+      '<td>' + acceptedHtml + '</td>' +
+      '<td class="actions">' + actionsHtml + '</td>';
+
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll('button[data-action]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+
+      stopSoundLoop();
+      btn.disabled = true;
+
+      let res;
+      if (action === 'accept') {
+        res = await api('accept_call', { id });
+      } else if (action === 'release') {
+        res = await api('release_call', { id });
+      } else {
+        res = await api('update_status', { id, status: action });
+      }
+
+      if (res.ok) {
+        await reloadAll();
+      } else {
+        const messages = {
+          'already_accepted': 'Виклик вже прийнятий: ' + (res.accepted_by || ''),
+          'already_closed': 'Виклик вже закритий',
+          'not_your_call': 'Це не ваш виклик',
+          'not_found': 'Виклик не знайдено'
+        };
+        alert(messages[res.error] || ('Помилка: ' + res.error));
+        await reloadAll();
+      }
+    });
+  });
+}
+
+async function checkForUpdates() {
+  try {
+    const data = await api('check_version', { version: currentVersion });
+    setConn(data.ok);
+
+    if (!data.ok) return;
+
+    if (data.changed) {
+      currentVersion = data.version;
+      await loadCalls();
+      await loadStats();
+    }
+  } catch (e) {
+    setConn(false);
+  }
+}
+
+async function reloadAll() {
+  await loadCalls();
+  await loadStats();
+}
+
+document.querySelectorAll('[data-filter]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    filterStatus = btn.dataset.filter;
+    loadCalls();
+  });
+});
+
+document.querySelectorAll('[data-type]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-type]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    filterType = btn.dataset.type;
+    loadCalls();
+  });
+});
+
+$('chipMine').addEventListener('click', () => {
+  filterMine = !filterMine;
+  $('chipMine').classList.toggle('active', filterMine);
+  loadCalls();
+});
+
+$('btnRefresh').addEventListener('click', reloadAll);
+
+$('btnAuto').addEventListener('click', () => {
+  autoRefreshOn = !autoRefreshOn;
+  $('btnAuto').textContent = 'Авто: ' + (autoRefreshOn ? 'УВІМК' : 'ВИКЛ');
+  if (autoRefreshOn) startAutoRefresh();
+  else stopAutoRefresh();
+});
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  autoRefreshId = setInterval(checkForUpdates, 30000);
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshId) {
+    clearInterval(autoRefreshId);
+    autoRefreshId = null;
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!autoRefreshOn) return;
+  if (document.hidden) {
+    stopAutoRefresh();
+    stopSoundLoop();
+  } else {
+    checkForUpdates();
+    startAutoRefresh();
+  }
+});
+
+$('logout')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  stopSoundLoop();
+  sessionStorage.clear();
+  window.location.href = 'index.html';
+});
+
+reloadAll();
+startAutoRefresh();
+</script>
+</body>
+</html>
